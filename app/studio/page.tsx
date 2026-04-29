@@ -1,8 +1,11 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Bot, Loader2, MessageSquareText, Send, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Bot, Loader2, LogOut, MessageSquareText, Save, Send, Sparkles } from 'lucide-react';
+
+import { getSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase';
 
 type GeneratedPost = {
   caption?: string;
@@ -20,6 +23,7 @@ type GeneratedReply = {
 };
 
 export default function StudioPage() {
+  const router = useRouter();
   const [idea, setIdea] = useState('Anuncio para negocios locales que todavía no tienen sitio web.');
   const [message, setMessage] = useState('Hola, cuánto sale una página para mi negocio?');
   const [postResult, setPostResult] = useState<GeneratedPost | null>(null);
@@ -28,6 +32,34 @@ export default function StudioPage() {
   const [loadingPost, setLoadingPost] = useState(false);
   const [loadingReply, setLoadingReply] = useState(false);
   const [loadingPublish, setLoadingPublish] = useState(false);
+
+  const configured = isSupabaseConfigured();
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!configured) return;
+    const supabase = getSupabaseBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setSessionEmail(data.user?.email ?? null);
+    });
+  }, [configured]);
+
+  const headerBadge = useMemo(() => {
+    if (!configured) return { label: 'Supabase pendiente', tone: 'yellow' as const };
+    return { label: sessionEmail ? `Sesión: ${sessionEmail}` : 'Sesión activa', tone: 'blue' as const };
+  }, [configured, sessionEmail]);
+
+  async function logout() {
+    if (!configured) {
+      router.push('/login');
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }
 
   async function generatePost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,8 +130,23 @@ export default function StudioPage() {
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-sm text-yellow-100">
-            Modo seguro: si faltan tokens, no publica; devuelve dry-run.
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <div
+              className={
+                headerBadge.tone === 'yellow'
+                  ? 'rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-sm text-yellow-100'
+                  : 'rounded-xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-100'
+              }
+            >
+              {headerBadge.label}. Modo seguro: si faltan tokens, no publica; devuelve dry-run.
+            </div>
+            <button
+              onClick={logout}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+            >
+              <LogOut size={16} />
+              Salir
+            </button>
           </div>
         </header>
 
@@ -132,6 +179,33 @@ export default function StudioPage() {
                 {postResult.shortVersion && <p className="rounded-xl bg-white/5 p-3 text-sm text-slate-300">{postResult.shortVersion}</p>}
                 {postResult.cta && <p className="font-semibold text-blue-200">{postResult.cta}</p>}
                 {postResult.hashtags && <p className="text-sm text-slate-400">{postResult.hashtags.join(' ')}</p>}
+                <button
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/posts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          title: `Borrador - ${new Date().toLocaleDateString('es-CL')}`,
+                          baseIdea: idea,
+                          caption: postResult.caption,
+                          shortVersion: postResult.shortVersion,
+                          hashtags: postResult.hashtags,
+                          cta: postResult.cta,
+                          networks: ['facebook', 'instagram'],
+                          status: 'draft',
+                        }),
+                      });
+                      setPublishResult(await response.json());
+                    } catch (caught) {
+                      setPublishResult({ ok: false, error: caught instanceof Error ? caught.message : 'No se pudo guardar.' });
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25"
+                >
+                  <Save size={16} />
+                  Guardar como borrador
+                </button>
                 <button onClick={testPublish} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10" disabled={loadingPublish}>
                   {loadingPublish ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
                   Probar publicación Facebook
@@ -168,6 +242,29 @@ export default function StudioPage() {
                 <div className="flex flex-wrap gap-2 text-sm">
                   <span className="rounded-full bg-blue-500/15 px-3 py-1 text-blue-200">Intento: {replyResult.intent ?? 'unknown'}</span>
                   <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-emerald-200">Lead: {replyResult.isLead ? 'sí' : 'no'}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={async () => {
+                      const res = await fetch('/api/messages', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          network: 'instagram',
+                          authorName: 'Simulado',
+                          text: message,
+                          intent: replyResult.intent,
+                          suggestedReply: replyResult.reply,
+                          isLead: replyResult.isLead,
+                        }),
+                      });
+                      setPublishResult(await res.json());
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"
+                  >
+                    <Save size={16} />
+                    Guardar mensaje
+                  </button>
                 </div>
               </div>
             )}
