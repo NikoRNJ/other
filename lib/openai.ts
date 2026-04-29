@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { ironstackBrandVoice } from '@/lib/brand';
 
-const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 
 export const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
