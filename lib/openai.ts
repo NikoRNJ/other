@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { ironstackBrandVoice } from '@/lib/brand';
 
+const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
+
 export const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
@@ -26,7 +28,7 @@ export async function generateIronStackPost(input: {
   }
 
   const response = await openai.responses.create({
-    model: 'gpt-5.1-mini',
+    model,
     input: [
       {
         role: 'system',
@@ -67,7 +69,7 @@ export async function generateIronStackReply(input: { message: string; context?:
   }
 
   const response = await openai.responses.create({
-    model: 'gpt-5.1-mini',
+    model,
     input: [
       {
         role: 'system',
